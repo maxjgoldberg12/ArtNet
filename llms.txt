@@ -1,0 +1,354 @@
+# ArtNet Swift Library
+
+A pure Swift implementation of the Art-Net protocol for DMX512 lighting control over Ethernet networks.
+
+## Core Concepts
+
+
+### Protocol Overview
+Art-Net is an industry-standard Ethernet protocol for transferring DMX512 lighting data over TCP/IP networks. It uses UDP port 6454 and operates on standard network infrastructure.
+
+### Addressing System
+Art-Net uses hierarchical addressing with 15-bit port addresses:
+- **Net** (7-bit, 0-127): Network identifier  
+- **Subnet** (4-bit, 0-15): Subnet within net
+- **Universe** (4-bit, 0-15): Individual universe within subnet
+
+## Architecture
+
+### Base Protocol
+```swift
+public protocol ArtNetPacket {
+    static var opCode: OpCode { get }
+    static var formatting: ArtNetFormatting { get }
+}
+```
+
+All Art-Net packets conform to `ArtNetPacket` which defines the operation code and encoding format.
+
+### Encoding/Decoding
+```swift
+public struct ArtNetEncoder {
+    public func encode<T: ArtNetPacket & Encodable>(_ value: T) throws -> Data
+}
+
+public struct ArtNetDecoder {
+    public func decode<T: ArtNetPacket & Decodable>(_ type: T.Type, from data: Data) throws -> T
+}
+```
+
+### Addressing
+```swift
+public struct PortAddress: RawRepresentable {
+    public let rawValue: UInt16  // 15-bit value
+    public var universe: Universe { get }   // Bits 3-0
+    public var subnet: SubNet { get }       // Bits 7-4  
+    public var net: Net { get }             // Bits 14-8
+    
+    public init(universe: Universe, subnet: SubNet, net: Net)
+}
+```
+
+## Packet Types
+
+### Discovery & Status
+
+#### ArtPoll - Device Discovery
+```swift
+public struct ArtPoll: ArtNetPacket {
+    public var behavior: BitMaskOptionSet<Behavior>
+    public var priority: DiagnosticPriority
+}
+```
+OpCode: 0x2000. Broadcast to discover Art-Net devices on network.
+
+#### ArtPollReply - Device Response  
+```swift
+public struct ArtPollReply: ArtNetPacket {
+    public var address: NetworkAddress.IPv4
+    public var shortName: String  // 18 bytes max
+    public var longName: String   // 64 bytes max
+    public var nodeReport: String // 64 bytes max
+    public var inputAddresses: [PortAddress]
+    public var outputAddresses: [PortAddress]
+}
+```
+OpCode: 0x2100. Response to ArtPoll containing device information.
+
+### Data Transfer
+
+#### ArtDmx - DMX Data
+```swift
+public struct ArtDmx: ArtNetPacket {
+    public var sequence: UInt8           // Packet sequence (0 = disabled)
+    public var physical: UInt8           // Physical input port
+    public var portAddress: PortAddress  // Destination universe
+    public var lightingData: Data        // Up to 512 bytes DMX data
+}
+```
+OpCode: 0x5000. Main packet for transferring DMX512 lighting data.
+
+#### ArtSync - Synchronization
+```swift
+public struct ArtSync: ArtNetPacket {
+    // No additional properties - just triggers output
+}
+```
+OpCode: 0x5200. Forces synchronous output of previously received ArtDmx packets.
+
+### Configuration
+
+#### ArtAddress - Remote Programming
+```swift
+public struct ArtAddress: ArtNetPacket {
+    public var netSwitch: UInt8
+    public var bindingIndex: UInt8
+    public var shortName: String
+    public var longName: String
+    public var inputAddresses: [PortAddress]
+    public var outputAddresses: [PortAddress]
+    public var subSwitch: UInt8
+    public var command: Command
+}
+```
+OpCode: 0x6000. Remote configuration of Art-Net nodes.
+
+### RDM (Remote Device Management)
+
+#### ArtRdm - RDM Messages
+```swift
+public struct ArtRdm: ArtNetPacket {
+    public var rdmVersion: RdmVersion
+    public var net: UInt8
+    public var command: Command
+    public var address: UInt8
+    public var rdmPacket: Data
+}
+```
+OpCode: 0x8300. Carries RDM (Remote Device Management) data.
+
+#### ArtTodRequest - Device Discovery
+```swift
+public struct ArtTodRequest: ArtNetPacket {
+    public var net: UInt8
+    public var command: Command
+    public var addresses: [UInt8]  // Universe addresses
+}
+```
+OpCode: 0x8000. Requests Table of Devices for RDM discovery.
+
+### Diagnostics
+
+#### DiagnosticData - Debug Information
+```swift
+public struct DiagnosticData: ArtNetPacket {
+    public var priority: DiagnosticPriority
+    public var data: Data  // ASCII text, max 512 bytes
+}
+```
+OpCode: 0x2300. General purpose diagnostic data transmission.
+
+## Complete OpCode Reference
+
+| OpCode | Name | Purpose |
+|--------|------|---------|
+| 0x2000 | ArtPoll | Device discovery |
+| 0x2100 | ArtPollReply | Device status response |
+| 0x2300 | DiagnosticData | Diagnostic information |
+| 0x2400 | ArtCommand | Text-based commands |
+| 0x5000 | ArtDmx | DMX512 data transfer |
+| 0x5100 | ArtNzs | Non-zero start code data |
+| 0x5200 | ArtSync | Synchronization signal |
+| 0x6000 | ArtAddress | Remote configuration |
+| 0x7000 | ArtInput | Input port configuration |
+| 0x8000 | ArtTodRequest | RDM device discovery request |
+| 0x8100 | ArtTodData | RDM device list |
+| 0x8200 | ArtTodControl | RDM discovery control |
+| 0x8300 | ArtRdm | RDM messages |
+| 0x8400 | ArtRdmSub | Compressed RDM data |
+| 0x9700 | ArtTimeCode | SMPTE time code |
+| 0x9900 | ArtTrigger | Macro triggers |
+| 0xF200 | FirmwareMaster | Firmware upload |
+| 0xF300 | FirmwareReply | Firmware acknowledgment |
+| 0xF800 | ArtIpProg | IP configuration |
+| 0xF900 | ArtIpProgReply | IP configuration response |
+
+## Data Types
+
+### Network Types
+```swift
+public struct NetworkAddress {
+    public struct IPv4: RawRepresentable {
+        public let rawValue: String  // "192.168.1.100"
+    }
+}
+
+public struct MacAddress: RawRepresentable {
+    public let rawValue: String  // "00:1A:7D:DA:71:13"
+}
+
+public struct SubnetMask {
+    public var bytes: (UInt8, UInt8, UInt8, UInt8)
+    public static var classA: SubnetMask    // 255.0.0.0
+    public static var classB: SubnetMask    // 255.255.0.0  
+    public static var classC: SubnetMask    // 255.255.255.0
+}
+```
+
+### RDM Types
+```swift
+public struct RdmUID: RawRepresentable {
+    public let rawValue: String  // "001A7DDA7113"
+}
+
+public enum RdmVersion: UInt8 {
+    case standard = 0x01
+}
+```
+
+### Utility Types
+```swift
+public enum DiagnosticPriority: UInt8 {
+    case all = 0x00
+    case low = 0x10
+    case medium = 0x40  
+    case high = 0x80
+    case critical = 0xe0
+    case volatile = 0xf0
+}
+
+public struct ProtocolVersion: RawRepresentable {
+    public static var current: ProtocolVersion  // Version 14
+}
+```
+
+## Usage Examples
+
+### Basic DMX Transmission
+```swift
+import ArtNet
+
+let encoder = ArtNetEncoder()
+
+// Create DMX packet
+let dmxPacket = ArtDmx(
+    sequence: 1,
+    physical: 0,
+    portAddress: PortAddress(universe: 1, subnet: 0, net: 0),
+    lightingData: Data([255, 128, 0, 255]) // RGBW values
+)
+
+// Encode to binary data
+let packetData = try encoder.encode(dmxPacket)
+// Send via UDP to port 6454
+```
+
+### Device Discovery
+```swift
+// Create poll packet
+let pollPacket = ArtPoll(
+    behavior: [.diagnostics],
+    priority: .low
+)
+
+let pollData = try encoder.encode(pollPacket)
+// Broadcast to 2.255.255.255:6454
+```
+
+### Packet Decoding
+```swift
+let decoder = ArtNetDecoder()
+
+// Determine packet type from header
+let opCode = OpCode(rawValue: /* extract from first 10 bytes */)
+
+switch opCode {
+case .dmx:
+    let dmxPacket = try decoder.decode(ArtDmx.self, from: receivedData)
+    print("Universe: \(dmxPacket.portAddress.universe)")
+    
+case .pollReply:
+    let replyPacket = try decoder.decode(ArtPollReply.self, from: receivedData)
+    print("Device: \(replyPacket.shortName)")
+    
+default:
+    print("Unsupported: \(opCode)")
+}
+```
+
+### Network Integration
+```swift
+import Network
+
+class ArtNetController {
+    private let connection: NWConnection
+    private let encoder = ArtNetEncoder()
+    
+    init() {
+        connection = NWConnection(
+            to: .hostPort(host: "2.255.255.255", port: 6454),
+            using: .udp
+        )
+    }
+    
+    func sendDMX(universe: Int, data: Data) {
+        let portAddress = PortAddress(
+            universe: PortAddress.Universe(universe),
+            subnet: 0,
+            net: 0
+        )
+        
+        let packet = ArtDmx(
+            portAddress: portAddress,
+            lightingData: data
+        )
+        
+        let encodedData = try! encoder.encode(packet)
+        connection.send(content: encodedData, completion: .idempotent)
+    }
+}
+```
+
+## Protocol Constants
+
+```swift
+// Standard Art-Net UDP port
+let artNetPort: UInt16 = 6454
+
+// Broadcast addresses
+let directedBroadcast = "2.255.255.255"    // Recommended
+let universalBroadcast = "255.255.255.255"  // Alternative
+
+// Limits
+let maxDMXChannels = 512
+let maxUniverses = 32768  // 15-bit addressing
+let maxStringLength = 64  // Typical for names
+```
+
+## Error Handling
+
+All encoding/decoding operations can throw Swift errors:
+
+```swift
+do {
+    let packet = try decoder.decode(ArtDmx.self, from: data)
+} catch {
+    print("Decoding failed: \(error)")
+}
+```
+
+Common error types:
+- `DecodingError.dataCorrupted` - Invalid packet format
+- `DecodingError.typeMismatch` - Wrong packet type for data
+- `EncodingError.invalidValue` - Invalid packet data
+
+## Installation
+
+```swift
+// Package.swift
+dependencies: [
+    .package(url: "https://github.com/maxjgoldberg12/ArtNet.git", from: "1.0.0")
+]
+```
+
+This library requires no external dependencies and works on iOS, macOS, Linux, and other Swift-supported platforms.
