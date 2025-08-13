@@ -240,8 +240,8 @@ final class PacketTests: XCTestCase {
             .init(channelProtocol: .artNet, input: true, output: false)
         ]
         
-        portTypes.forEach {
-            print("0x" + ($0?.rawValue ?? 0x00).toHexadecimal(), $0?.description ?? "nil")
+        for channel in portTypes {
+            print("0x" + (channel?.rawValue ?? 0x00).toHexadecimal(), channel?.description ?? "nil")
         }
         
         XCTAssertEqual(portTypes, portTypes, "Equatable is not working")

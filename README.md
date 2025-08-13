@@ -30,7 +30,7 @@ Add this package to your `Package.swift` file:
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/your-repo/ArtNet.git", from: "1.0.0")
+    .package(url: "https://github.com/maxjgoldberg12/ArtNet.git", from: "1.0.0")
 ]
 ```
 
@@ -186,7 +186,7 @@ class ArtNetController {
     init() {
         // Art-Net uses UDP port 6454
         connection = NWConnection(
-            to: .hostPort(host: "255.255.255.255", port: 6454),
+            to: .hostPort(host: "2.255.255.255", port: 6454),
             using: .udp
         )
     }
@@ -213,7 +213,8 @@ class ArtNetController {
 // Standard Art-Net port
 let artNetPort: UInt16 = 6454
 
-// Broadcast address for device discovery
+// Broadcast address for device discovery  
+// Art-Net spec suggests 2.255.255.255 for directed broadcast (recommended), or 255.255.255.255 for universal broadcast
 let broadcastAddress = "2.255.255.255"
 
 // Maximum DMX channels per universe
@@ -276,7 +277,7 @@ This library implements Art-Net protocol version 4 as specified in the [Art-Net 
 |--------|-------------|-------------|
 | 0x2000 | ArtPoll | Device discovery |
 | 0x2100 | ArtPollReply | Device status response |
-| 0x2300 | ArtDiagData | Diagnostic information |
+| 0x2300 | DiagnosticData | Diagnostic information |
 | 0x2400 | ArtCommand | Text-based commands |
 | 0x5000 | ArtDmx | DMX512 data transfer |
 | 0x5100 | ArtNzs | Non-zero start code data |
